@@ -1,35 +1,81 @@
 //! ## State Validation
-//! `state-validation` lets you validate an input for a given state.
+//! `state-validation` lets you validate an input for a given state. Then, run an action using the validated output.
 //!
 //! Ex. You want to remove an admin from `UserStorage`, given a `UserID`, you want to retrieve the `User` who maps onto the `UserID` and validate they are an existing user whose privilege level is admin.
 //! The state is `UserStorage`, the input is a `UserID`, and the valid output is an `AdminUser`.
+//!
+//! Here is our input `UserID`, each input should be marked with the `StateFilterInput` derive macro:
 //! ```
 //! # use std::collections::{HashSet, HashMap};
 //! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
-//! // Input
-//! // Mark each input with the `StateFilterInput` derive macro.
 //! #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
 //! struct UserID(usize);
-//!
-//! // State
-//! #[derive(Default)]
-//! struct UserStorage {
-//!     maps: HashMap<UserID, User>,
-//! }
+//! ```
+//! Our `User` which holds its `UserID` and `username`:
+//! ```
+//! # use std::collections::{HashSet, HashMap};
+//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
+//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # struct UserID(usize);
 //! #[derive(StateFilterInput, Clone)]
 //! struct User {
 //!     id: UserID,
 //!     username: String,
 //! }
-//!
-//! // Valid Output
-//! // Mark with `StateFilterInput`, too.
+//! ```
+//! Our state will be `UserStorage`:
+//! ```
+//! # use std::collections::{HashSet, HashMap};
+//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
+//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # struct UserID(usize);
+//! # #[derive(StateFilterInput, Clone)]
+//! # struct User {
+//! #     id: UserID,
+//! #     username: String,
+//! # }
+//! #[derive(Default)]
+//! struct UserStorage {
+//!     maps: HashMap<UserID, User>,
+//! }
+//! ```
+//! We will create a newtype `AdminUser`, which only users with admin privilege will be wrapped in.
+//! This will also be the output of our filter which checks if a user is admin:
+//! ```
+//! # use std::collections::{HashSet, HashMap};
+//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
+//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # struct UserID(usize);
+//! # #[derive(StateFilterInput, Clone)]
+//! # struct User {
+//! #     id: UserID,
+//! #     username: String,
+//! # }
+//! # #[derive(Default)]
+//! # struct UserStorage {
+//! #     maps: HashMap<UserID, User>,
+//! # }
 //! #[derive(StateFilterInput)]
 //! struct AdminUser(User);
-//!
-//! // FILTERS
-//!
-//! struct UserExists;
+//! ```
+//! Our first filter will check if a `User` exists given a `UserID`:
+//! ```
+//! # use std::collections::{HashSet, HashMap};
+//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
+//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # struct UserID(usize);
+//! # #[derive(StateFilterInput, Clone)]
+//! # struct User {
+//! #     id: UserID,
+//! #     username: String,
+//! # }
+//! # #[derive(Default)]
+//! # struct UserStorage {
+//! #     maps: HashMap<UserID, User>,
+//! # }
+//! # #[derive(StateFilterInput)]
+//! # struct AdminUser(User);
+//! # struct UserExists;
 //! # #[derive(Debug)]
 //! # struct UserDoesNotExistError;
 //! # impl std::error::Error for UserDoesNotExistError {}
@@ -38,7 +84,6 @@
 //! #        write!(f, "user does not exist")
 //! #     }
 //! # }
-//! //              <State,       Input>
 //! impl StateFilter<UserStorage, UserID> for UserExists {
 //!     type ValidOutput = User;
 //!     type Error = UserDoesNotExistError;
@@ -50,7 +95,25 @@
 //!         }
 //!     }
 //! }
-//!
+//! ```
+//! Our second filter will check if a `User` is admin:
+//! ```
+//! # use std::collections::{HashSet, HashMap};
+//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
+//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # struct UserID(usize);
+//! # #[derive(StateFilterInput, Clone)]
+//! # struct User {
+//! #     id: UserID,
+//! #     username: String,
+//! # }
+//! # #[derive(Default)]
+//! # struct UserStorage {
+//! #     maps: HashMap<UserID, User>,
+//! # }
+//! # #[derive(StateFilterInput)]
+//! # struct AdminUser(User);
+//! #
 //! struct UserIsAdmin;
 //! # #[derive(Debug)]
 //! # struct UserIsNotAdminError;
@@ -60,10 +123,10 @@
 //! #        write!(f, "user is not an admin")
 //! #     }
 //! # }
-//! impl StateFilter<UserStorage, User> for UserIsAdmin {
+//! impl<State> StateFilter<State, User> for UserIsAdmin {
 //!     type ValidOutput = AdminUser;
 //!     type Error = UserIsNotAdminError;
-//!     fn filter(state: &UserStorage, user: User) -> Result<Self::ValidOutput, Self::Error> {
+//!     fn filter(state: &State, user: User) -> Result<Self::ValidOutput, Self::Error> {
 //!         if user.username == "ADMIN" {
 //!             Ok(AdminUser(user))
 //!         } else {
@@ -71,8 +134,67 @@
 //!         }
 //!     }
 //! }
+//! ```
+//! Note: in the above code, we don't care about the `state` so it is a generic.
 //!
-//! // Action that removes the admin from user storage.
+//! Now, we can finally implement an action that removes the admin from user storage:
+//! ```
+//! # use std::collections::{HashSet, HashMap};
+//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
+//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # struct UserID(usize);
+//! # #[derive(StateFilterInput, Clone)]
+//! # struct User {
+//! #     id: UserID,
+//! #     username: String,
+//! # }
+//! # #[derive(Default)]
+//! # struct UserStorage {
+//! #     maps: HashMap<UserID, User>,
+//! # }
+//! # #[derive(StateFilterInput)]
+//! # struct AdminUser(User);
+//! struct UserExists;
+//! # #[derive(Debug)]
+//! # struct UserDoesNotExistError;
+//! # impl std::error::Error for UserDoesNotExistError {}
+//! # impl std::fmt::Display for UserDoesNotExistError {
+//! #    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+//! #        write!(f, "user does not exist")
+//! #     }
+//! # }
+//! # impl StateFilter<UserStorage, UserID> for UserExists {
+//! #     type ValidOutput = User;
+//! #     type Error = UserDoesNotExistError;
+//! #     fn filter(state: &UserStorage, user_id: UserID) -> Result<Self::ValidOutput, Self::Error> {
+//! #         if let Some(user) = state.maps.get(&user_id) {
+//! #             Ok(user.clone())
+//! #         } else {
+//! #             Err(UserDoesNotExistError)
+//! #         }
+//! #     }
+//! # }
+//! # struct UserIsAdmin;
+//! # #[derive(Debug)]
+//! # struct UserIsNotAdminError;
+//! # impl std::error::Error for UserIsNotAdminError {}
+//! # impl std::fmt::Display for UserIsNotAdminError {
+//! #    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+//! #        write!(f, "user is not an admin")
+//! #     }
+//! # }
+//! # impl<State> StateFilter<State, User> for UserIsAdmin {
+//! #     type ValidOutput = AdminUser;
+//! #     type Error = UserIsNotAdminError;
+//! #     fn filter(state: &State, user: User) -> Result<Self::ValidOutput, Self::Error> {
+//! #         if user.username == "ADMIN" {
+//! #             Ok(AdminUser(user))
+//! #         } else {
+//! #             Err(UserIsNotAdminError)
+//! #         }
+//! #     }
+//! # }
+//! #
 //! struct RemoveAdmin;
 //! impl ValidAction<UserStorage, UserID> for RemoveAdmin {
 //!     // To chain filters, use `Condition`.
@@ -94,7 +216,84 @@
 //!         state
 //!     }
 //! }
-//!
+//! ```
+//! Now, let's put it all together. We create the state `UserStorage`,
+//! and then use [`Validator::try_new`] to run our filters. An error is returned if any of the filters fail,
+//! otherwise we get a validator that we can run an action on:
+//! ```
+//! # use std::collections::{HashSet, HashMap};
+//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
+//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # struct UserID(usize);
+//! # #[derive(StateFilterInput, Clone)]
+//! # struct User {
+//! #     id: UserID,
+//! #     username: String,
+//! # }
+//! # #[derive(Default)]
+//! # struct UserStorage {
+//! #     maps: HashMap<UserID, User>,
+//! # }
+//! # #[derive(StateFilterInput)]
+//! # struct AdminUser(User);
+//! # struct UserExists;
+//! # #[derive(Debug)]
+//! # struct UserDoesNotExistError;
+//! # impl std::error::Error for UserDoesNotExistError {}
+//! # impl std::fmt::Display for UserDoesNotExistError {
+//! #    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+//! #        write!(f, "user does not exist")
+//! #     }
+//! # }
+//! # impl StateFilter<UserStorage, UserID> for UserExists {
+//! #     type ValidOutput = User;
+//! #     type Error = UserDoesNotExistError;
+//! #     fn filter(state: &UserStorage, user_id: UserID) -> Result<Self::ValidOutput, Self::Error> {
+//! #         if let Some(user) = state.maps.get(&user_id) {
+//! #             Ok(user.clone())
+//! #         } else {
+//! #             Err(UserDoesNotExistError)
+//! #         }
+//! #     }
+//! # }
+//! # struct UserIsAdmin;
+//! # #[derive(Debug)]
+//! # struct UserIsNotAdminError;
+//! # impl std::error::Error for UserIsNotAdminError {}
+//! # impl std::fmt::Display for UserIsNotAdminError {
+//! #    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+//! #        write!(f, "user is not an admin")
+//! #     }
+//! # }
+//! # impl<State> StateFilter<State, User> for UserIsAdmin {
+//! #     type ValidOutput = AdminUser;
+//! #     type Error = UserIsNotAdminError;
+//! #     fn filter(state: &State, user: User) -> Result<Self::ValidOutput, Self::Error> {
+//! #         if user.username == "ADMIN" {
+//! #             Ok(AdminUser(user))
+//! #         } else {
+//! #             Err(UserIsNotAdminError)
+//! #         }
+//! #     }
+//! # }
+//! #
+//! # struct RemoveAdmin;
+//! # impl ValidAction<UserStorage, UserID> for RemoveAdmin {
+//! #     type Filter = (
+//! #         Condition<UserID, UserExists>,
+//! #         Condition<User, UserIsAdmin>,
+//! #     );
+//! #     type Output = UserStorage;
+//! #     fn with_valid_input(
+//! #         self,
+//! #         mut state: UserStorage,
+//! #         admin_user: <Self::Filter as StateFilter<UserStorage, UserID>>::ValidOutput,
+//! #     ) -> Self::Output {
+//! #         let _ = state.maps.remove(&admin_user.0.id).unwrap();
+//! #         state
+//! #     }
+//! # }
+//! #
 //! // State setup
 //! let mut user_storage = UserStorage::default();
 //! user_storage.maps.insert(UserID(0), User {
@@ -111,8 +310,8 @@
 //!
 //! assert!(user_storage.maps.is_empty());
 //! ```
-//!
-//! Another example using `UserExists` filter, and `UserIsAdmin` filter in the body of the `ValidAction`:
+//! ---
+//! Another example using `UserExists` filter, and `UserIsAdmin` filter in the body of the [`ValidAction`]:
 //! ```
 //! # use std::collections::{HashSet, HashMap};
 //! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
@@ -227,16 +426,19 @@
 //! # assert!(user.is_some());
 //! assert_eq!(user.unwrap().username, "NOT_ADMIN");
 //! ```
-//! ## `StateFilterInputConversion` & `StateFilterInputCombination`
-//! The `StateFilterInputConversion` and `StateFilterInputCombination` traits work together
+//!
+//! ## [`StateFilterInputConversion`] & [`StateFilterInputCombination`]
+//! The [`StateFilterInputConversion`] and [`StateFilterInputCombination`] traits work together
 //! to allow splitting the input down into its parts and then back together.
 //!
-//! The usefulness of this is, if a `StateFilter` only requires a part of the input,
-//! `StateFilterInputConversion` can split it down to just that part, and leave the rest in a `Remainder`
+//! The usefulness of this is, if a [`StateFilter`] only requires a part of the input,
+//! [`StateFilterInputConversion`] can split it down to just that part, and leave the rest in [`StateFilterInputConversion::Remainder`]
 //! which will be combined with the output of the filter. And, each consecutive filter can split
 //! whatever input they desire and combine their output with the remainder they did not touch.
 //!
-//! Assume we have the following struct:
+//! Here is an example: Assume we wanted to change the username of a user,
+//! if its `UserID` and current username matched that of the input.
+//! First, let's create its input:
 //! ```
 //! # struct UserID(usize);
 //! struct UserWithUsername {
@@ -250,7 +452,7 @@
 //! But, `UserExists` does not take `UserWithUsername` as an input. It only takes `UserID` as input.
 //! `UserWithUsername` does contain a `UserID`. So, we should be able to retrieve the `UserID`,
 //! pass it into `UserExists`, then reconstruct the output of `UserExists` with the leftover `username`.
-//! The first part of solving this issue is input conversion into `UserID`, so we implement `StateFilterInputConversion`:
+//! The first part of solving this issue is input conversion into `UserID`, so we implement [`StateFilterInputConversion`]:
 //! ```
 //! # use state_validation::StateFilterInputConversion;
 //! # struct UserID(usize);
@@ -425,8 +627,8 @@
 //! ```
 //!
 //! ## Soundness Rules
-//! `Validator::try_new` takes ownership of the `state` to disallow consecutive
-//! `Validator::execute` calls because an action is assumed to mutate the `state`.
+//! [`Validator::try_new`] takes ownership of the `state` to disallow consecutive
+//! [`Validator::execute`] calls because an action is assumed to mutate the `state`.
 //! Since an action is assumed to mutate the `state`, any validators using the same `state`
 //! cannot be created.
 //!
