@@ -1,0 +1,17 @@
+[package]
+name = "state-validation-derive"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["Albar <albarjob@gmail.com>"]
+description = "Macros for state-validation crate"
+repository = "https://github.com/Ripper53/state-validation"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+darling = "0.21.3"
+proc-macro2 = "1.0.101"
+quote = "1.0.40"
+syn = "2.0.105"
