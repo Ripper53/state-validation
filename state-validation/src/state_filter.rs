@@ -5,11 +5,11 @@ pub trait StateFilter<State, Input> {
     type Error: std::error::Error;
     fn filter(state: &State, value: Input) -> Result<Self::ValidOutput, Self::Error>;
 }
-impl<State> StateFilter<State, ()> for () {
-    type ValidOutput = ();
+impl<State, Input> StateFilter<State, Input> for () {
+    type ValidOutput = Input;
     type Error = std::convert::Infallible;
-    fn filter(_state: &State, (): ()) -> Result<Self::ValidOutput, Self::Error> {
-        Ok(())
+    fn filter(_state: &State, input: Input) -> Result<Self::ValidOutput, Self::Error> {
+        Ok(input)
     }
 }
 impl<
