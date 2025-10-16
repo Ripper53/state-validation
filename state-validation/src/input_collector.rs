@@ -1,17 +1,11 @@
-use crate::{StateFilter, StateFilterInput};
+use crate::StateFilter;
 
-pub struct CollectedInputs<State, Inputs: Iterator>
-where
-    Inputs::Item: StateFilterInput,
-{
+pub struct CollectedInputs<State, Inputs: Iterator> {
     inputs: Inputs,
     _m: std::marker::PhantomData<State>,
 }
 
-impl<State, Inputs: Iterator> CollectedInputs<State, Inputs>
-where
-    Inputs::Item: StateFilterInput,
-{
+impl<State, Inputs: Iterator> CollectedInputs<State, Inputs> {
     pub fn new(inputs: Inputs) -> Self {
         CollectedInputs {
             inputs,
@@ -41,6 +35,6 @@ where
     }
 }
 
-pub trait InputCollector<State, Input: StateFilterInput> {
+pub trait InputCollector<State, Input> {
     fn collect_inputs(state: &State) -> CollectedInputs<State, impl Iterator<Item = Input>>;
 }
