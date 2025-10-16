@@ -75,7 +75,7 @@
 //! # }
 //! # #[derive(StateFilterInput)]
 //! # struct AdminUser(User);
-//! # struct UserExists;
+//! struct UserExists;
 //! # #[derive(Debug)]
 //! # struct UserDoesNotExistError;
 //! # impl std::error::Error for UserDoesNotExistError {}
@@ -154,7 +154,7 @@
 //! # }
 //! # #[derive(StateFilterInput)]
 //! # struct AdminUser(User);
-//! struct UserExists;
+//! # struct UserExists;
 //! # #[derive(Debug)]
 //! # struct UserDoesNotExistError;
 //! # impl std::error::Error for UserDoesNotExistError {}
