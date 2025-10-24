@@ -1,6 +1,6 @@
 use crate::{StateFilter, StateFilterInput};
 
-pub trait ValidAction<State, Input: StateFilterInput> {
+pub trait ValidAction<State, Input> {
     type Filter: StateFilter<State, Input>;
     type Output;
     fn with_valid_input(
