@@ -1,4 +1,4 @@
-use crate::{StateFilter, StateFilterInput};
+use crate::StateFilter;
 
 pub trait ValidAction<State, Input> {
     type Filter: StateFilter<State, Input>;
