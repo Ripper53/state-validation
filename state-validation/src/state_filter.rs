@@ -14,9 +14,30 @@ impl<State, Input> StateFilter<State, Input> for () {
 }
 impl<
     State,
+    InitialInput,
+    Input,
+    F: StateFilter<State, Input>,
+> StateFilter<State, InitialInput> for Condition<Input, F>
+where
+    InitialInput: StateFilterInputConversion<Input>,
+    <InitialInput as StateFilterInputConversion<Input>>::Remainder:
+        StateFilterInputCombination<F::ValidOutput>,
+{
+    type ValidOutput =
+        <<InitialInput as StateFilterInputConversion<Input>>::Remainder as StateFilterInputCombination<
+            F::ValidOutput,
+        >>::Combined;
+    type Error = F::Error;
+    fn filter(state: &State, value: InitialInput) -> Result<Self::ValidOutput, Self::Error> {
+        let (input, remainder) = value.split_take();
+        F::filter(state, input).map(|v| remainder.combine(v))
+    }
+}
+impl<
+    State,
     InitialInput: StateFilterInput,
-    Input0: StateFilterInput,
-    Input1: StateFilterInput,
+    Input0,
+    Input1,
     F0: StateFilter<State, Input0>,
     F1: StateFilter<State, Input1>,
 > StateFilter<State, InitialInput> for (Condition<Input0, F0>, Condition<Input1, F1>)
