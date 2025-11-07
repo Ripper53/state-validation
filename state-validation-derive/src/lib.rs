@@ -1,8 +1,5 @@
-use std::collections::{HashMap, HashSet, hash_map::Entry};
-
 use darling::FromDeriveInput;
 use proc_macro::TokenStream;
-use proc_macro2::Span;
 use quote::TokenStreamExt;
 use syn::{Expr, Ident, Type, parse_macro_input};
 
@@ -17,7 +14,7 @@ struct StateFilterInputData {
 enum ConversionType {
     Type(syn::Type),
     Generic {
-        generic_ident: syn::Ident,
+        generic_ident: Vec<syn::Ident>,
         path: syn::Path,
     },
 }
@@ -28,7 +25,7 @@ impl syn::parse::Parse for ConversionType {
             let _: syn::Token![=] = input.parse()?;
             let path = input.parse()?;
             Ok(ConversionType::Generic {
-                generic_ident,
+                generic_ident: vec![generic_ident],
                 path,
             })
         } else {
@@ -46,20 +43,23 @@ impl quote::ToTokens for ConversionType {
                 generic_ident,
                 path,
             } => {
-                tokens.append_all(quote::quote!(#path<#generic_ident>));
+                tokens.append_all(quote::quote!(#path));
             }
         }
     }
 }
 
-macro_rules! new_field_combination {
-    ($fields: expr) => {{}};
-}
 #[proc_macro_derive(StateFilterInput, attributes(state_filter_input, conversion))]
 pub fn state_filter_input(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as syn::DeriveInput);
     let name = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
+    let generics: Vec<_> = ast
+        .generics
+        .type_params()
+        .into_iter()
+        .map(|ty| ty.ident.clone())
+        .collect();
     let data = StateFilterInputData::from_derive_input(&ast).unwrap();
     let state_conversions = match &ast.data {
         syn::Data::Struct(s) => {
@@ -92,19 +92,20 @@ pub fn state_filter_input(input: TokenStream) -> TokenStream {
                 let mut a = |combined_struct_name: &Ident,
                              remainder_struct_name: &Ident,
                              Meow {
-                                 current_field: (field_name, field_type),
-                                 other_fields: (other_field_names, other_field_types),
+                                 current_field: (field_name, field_type, field_generics),
+                                 other_fields:
+                                     (other_field_names, other_field_types, other_field_generics),
                              }: &Meow<'_>| {
                     let q = quote::quote! {
-                        pub struct #combined_struct_name {
+                        pub struct #combined_struct_name <#(#field_generics),* #(#(#other_field_generics),*)*> {
                             #field_name: #field_type,
                             #(#other_field_names: #other_field_types),*
                         }
-                        pub struct #remainder_struct_name {
+                        pub struct #remainder_struct_name <#(#(#other_field_generics),*)*> {
                             #(#other_field_names: #other_field_types),*
                         }
-                        impl #impl_generics state_validation::StateFilterInputCombination<#field_type> for #remainder_struct_name {
-                            type Combined = #combined_struct_name;
+                        impl <#(#field_generics),* #(#(#other_field_generics),*)*> state_validation::StateFilterInputCombination<#field_type> for #remainder_struct_name <#(#(#other_field_generics),*)*> {
+                            type Combined = #combined_struct_name <#(#field_generics),* #(#(#other_field_generics),*)*>;
                             fn combine(self, value: #field_type) -> Self::Combined {
                                 #combined_struct_name {
                                     #field_name: value,
@@ -112,8 +113,8 @@ pub fn state_filter_input(input: TokenStream) -> TokenStream {
                                 }
                             }
                         }
-                        impl #impl_generics state_validation::StateFilterInputConversion<#field_type> for #combined_struct_name {
-                            type Remainder = #remainder_struct_name;
+                        impl <#(#field_generics),* #(#(#other_field_generics),*)*> state_validation::StateFilterInputConversion<#field_type> for #combined_struct_name <#(#field_generics),* #(#(#other_field_generics),*)*> {
+                            type Remainder = #remainder_struct_name <#(#(#other_field_generics),*)*>;
                             fn split_take(self) -> (#field_type, Self::Remainder) {
                                 (
                                     self.#field_name,
@@ -144,14 +145,15 @@ pub fn state_filter_input(input: TokenStream) -> TokenStream {
                         let remainder_struct_name =
                             quote::format_ident!("__StateValidationGeneration_{name}Remainder_{i}");
                         a(&combined_struct_name, &remainder_struct_name, &meow);
-                        let (field_name, field_type) = meow.current_field;
-                        let (other_field_names, other_field_types) = meow.other_fields;
+                        let (field_name, field_type, field_generics) = meow.current_field;
+                        let (other_field_names, other_field_types, other_field_generics) =
+                            meow.other_fields;
                         let remainder_struct_name = quote::format_ident!(
                             "__StateValidationGeneration_{name}RemainderField_{field_number}"
                         );
                         let q = quote::quote! {
-                            impl state_validation::StateFilterInputCombination<#field_type> for #remainder_struct_name {
-                                type Combined = #combined_struct_name;
+                            impl <#(#field_generics),* #(#(#other_field_generics),*)*> state_validation::StateFilterInputCombination<#field_type> for #remainder_struct_name <#(#(#other_field_generics),*)*> {
+                                type Combined = #combined_struct_name <#(#field_generics),* #(#(#other_field_generics),*)*>;
                                 fn combine(self, value: #field_type) -> Self::Combined {
                                     #combined_struct_name {
                                         #field_name: value,
@@ -170,10 +172,11 @@ pub fn state_filter_input(input: TokenStream) -> TokenStream {
                             "__StateValidationGeneration_{name}RemainderField_{field_number}"
                         );
                         a(&combined_struct_name, &remainder_struct_name, &meow);
-                        let (field_name, field_type) = meow.current_field;
-                        let (other_field_names, other_field_types) = meow.other_fields;
+                        let (field_name, field_type, field_generics) = meow.current_field;
+                        let (other_field_names, other_field_types, other_field_generics) =
+                            meow.other_fields;
                         let q = quote::quote! {
-                            impl #impl_generics state_validation::StateFilterInputConversion<#field_type> for #name #ty_generics #where_clause {
+                            impl <#(#generics),* #(#field_generics),*> state_validation::StateFilterInputConversion<#field_type> for #name #ty_generics #where_clause {
                                 type Remainder = #remainder_struct_name;
                                 fn split_take(self) -> (#field_type, Self::Remainder) {
                                     (
@@ -278,8 +281,8 @@ enum M<'a> {
 }
 struct Meow<'a> {
     // (field_names, field_types, TODO: field_generics)
-    current_field: (&'a Ident, ConversionType),
-    other_fields: (Vec<&'a Ident>, Vec<ConversionType>),
+    current_field: (&'a Ident, ConversionType, Vec<Ident>),
+    other_fields: (Vec<&'a Ident>, Vec<ConversionType>, Vec<Vec<Ident>>),
 }
 impl<'a> Iterator for FieldCombinationIter<'a> {
     type Item = M<'a>;
@@ -303,13 +306,34 @@ impl<'a> Iterator for FieldCombinationIter<'a> {
                         .any(|other_cursor| other_cursor.next().is_some())
                 {
                     self.first_iteration = false;
-                    let other_fields: (Vec<_>, Vec<_>) = self
+                    let current_field_generics = if let ConversionType::Generic {
+                        generic_ident,
+                        path,
+                    } = &current_cursor.last_current_type
+                    {
+                        generic_ident.clone()
+                    } else {
+                        Vec::new()
+                    };
+                    let (other_field_names, (other_field_types, other_field_generics)): (
+                        Vec<_>,
+                        (Vec<_>, Vec<_>),
+                    ) = self
                         .current_other_fields
                         .iter()
                         .map(|other_cursor| {
+                            let other_generics = if let ConversionType::Generic {
+                                generic_ident,
+                                path,
+                            } = &other_cursor.last_current_type
+                            {
+                                generic_ident.clone()
+                            } else {
+                                Vec::new()
+                            };
                             (
                                 other_cursor.field_name,
-                                other_cursor.last_current_type.clone(),
+                                (other_cursor.last_current_type.clone(), other_generics),
                             )
                         })
                         .unzip();
@@ -320,8 +344,13 @@ impl<'a> Iterator for FieldCombinationIter<'a> {
                                 current_field: (
                                     current_cursor.field_name,
                                     current_cursor.last_current_type.clone(),
+                                    current_field_generics,
                                 ),
-                                other_fields,
+                                other_fields: (
+                                    other_field_names,
+                                    other_field_types,
+                                    other_field_generics,
+                                ),
                             },
                         },
                         N::NewType => M::NewType {
@@ -331,8 +360,13 @@ impl<'a> Iterator for FieldCombinationIter<'a> {
                                 current_field: (
                                     current_cursor.field_name,
                                     current_cursor.last_current_type.clone(),
+                                    current_field_generics,
                                 ),
-                                other_fields,
+                                other_fields: (
+                                    other_field_names,
+                                    other_field_types,
+                                    other_field_generics,
+                                ),
                             },
                         },
                         N::NewField => M::NewField {
@@ -341,8 +375,13 @@ impl<'a> Iterator for FieldCombinationIter<'a> {
                                 current_field: (
                                     current_cursor.field_name,
                                     current_cursor.last_current_type.clone(),
+                                    current_field_generics,
                                 ),
-                                other_fields,
+                                other_fields: (
+                                    other_field_names,
+                                    other_field_types,
+                                    other_field_generics,
+                                ),
                             },
                         },
                     };
