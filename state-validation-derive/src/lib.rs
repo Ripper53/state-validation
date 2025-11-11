@@ -1,4 +1,3 @@
-use darling::FromDeriveInput;
 use proc_macro::TokenStream;
 use quote::TokenStreamExt;
 use syn::{Expr, Ident, Type, parse_macro_input};
@@ -60,7 +59,7 @@ pub fn state_filter_input(input: TokenStream) -> TokenStream {
         .into_iter()
         .map(|ty| ty.ident.clone())
         .collect();
-    let data = StateFilterInputData::from_derive_input(&ast).unwrap();
+    //let data = StateFilterInputData::from_derive_input(&ast).unwrap();
     let state_conversions = match &ast.data {
         syn::Data::Struct(s) => {
             let fields_count = s.fields.len();
@@ -88,52 +87,69 @@ pub fn state_filter_input(input: TokenStream) -> TokenStream {
                     Some((field_name, all_conversion_fields))
                 })
                 .collect();
-            for (i, m) in FieldCombinationIter::new(iter).enumerate() {
-                let mut a = |combined_struct_name: &Ident,
-                             remainder_struct_name: &Ident,
-                             Meow {
-                                 current_field: (field_name, field_type, field_generics),
-                                 other_fields:
-                                     (other_field_names, other_field_types, other_field_generics),
-                             }: &Meow<'_>| {
-                    let q = quote::quote! {
-                        pub struct #combined_struct_name <#(#field_generics),* #(#(#other_field_generics),*)*> {
-                            #field_name: #field_type,
-                            #(#other_field_names: #other_field_types),*
+            let mut create_structs = |state_conversions: &mut Vec<proc_macro2::TokenStream>,
+                                      combined_struct_name: &Ident,
+                                      remainder_struct_name: &Ident,
+                                      Meow {
+                                          current_field: (field_name, field_type, field_generics),
+                                          other_fields:
+                                              (
+                other_field_names,
+                other_field_types,
+                other_field_generics,
+            ),
+                                      }: &Meow<'_>| {
+                let other_field_generics: Vec<_> =
+                    other_field_generics.clone().into_iter().flatten().collect();
+                let all_field_generics: Vec<_> = other_field_generics
+                    .clone()
+                    .into_iter()
+                    .chain(field_generics.clone().into_iter().flatten())
+                    .collect();
+                let q = quote::quote! {
+                    pub struct #combined_struct_name <#(#all_field_generics),*> {
+                        #(#field_name: #field_type,)*
+                        #(#other_field_names: #other_field_types),*
+                    }
+                    pub struct #remainder_struct_name <#(#other_field_generics),*> {
+                        #(#other_field_names: #other_field_types),*
+                    }
+                    impl <#(#all_field_generics),*> state_validation::StateFilterInputCombination<(#(#field_type),*)> for #remainder_struct_name <#(#other_field_generics),*> {
+                        type Combined = #combined_struct_name <#(#all_field_generics),*>;
+                        fn combine(self, (#(#field_name),*): (#(#field_type),*)) -> Self::Combined {
+                            #combined_struct_name {
+                                #(#field_name,)*
+                                #(#other_field_names: self.#other_field_names),*
+                            }
                         }
-                        pub struct #remainder_struct_name <#(#(#other_field_generics),*)*> {
-                            #(#other_field_names: #other_field_types),*
-                        }
-                        impl <#(#field_generics),* #(#(#other_field_generics),*)*> state_validation::StateFilterInputCombination<#field_type> for #remainder_struct_name <#(#(#other_field_generics),*)*> {
-                            type Combined = #combined_struct_name <#(#field_generics),* #(#(#other_field_generics),*)*>;
-                            fn combine(self, value: #field_type) -> Self::Combined {
-                                #combined_struct_name {
-                                    #field_name: value,
+                    }
+                    impl <#(#all_field_generics),*> state_validation::StateFilterInputConversion<#(#field_type),*> for #combined_struct_name <#(#all_field_generics),*> {
+                        type Remainder = #remainder_struct_name <#(#other_field_generics),*>;
+                        fn split_take(self) -> ((#(#field_type),*), Self::Remainder) {
+                            (
+                                (#(self.#field_name),*),
+                                #remainder_struct_name {
                                     #(#other_field_names: self.#other_field_names),*
-                                }
-                            }
+                                },
+                            )
                         }
-                        impl <#(#field_generics),* #(#(#other_field_generics),*)*> state_validation::StateFilterInputConversion<#field_type> for #combined_struct_name <#(#field_generics),* #(#(#other_field_generics),*)*> {
-                            type Remainder = #remainder_struct_name <#(#(#other_field_generics),*)*>;
-                            fn split_take(self) -> (#field_type, Self::Remainder) {
-                                (
-                                    self.#field_name,
-                                    #remainder_struct_name {
-                                        #(#other_field_names: self.#other_field_names),*
-                                    },
-                                )
-                            }
-                        }
-                    };
-                    state_conversions.push(q);
+                    }
                 };
+                state_conversions.push(q);
+            };
+            for (i, m) in FieldCombinationIter::new(iter.clone()).enumerate() {
                 match m {
                     M::Next { field_number, meow } => {
                         let combined_struct_name =
                             quote::format_ident!("__StateValidationGeneration_{name}Combined_{i}");
                         let remainder_struct_name =
                             quote::format_ident!("__StateValidationGeneration_{name}Remainder_{i}");
-                        a(&combined_struct_name, &remainder_struct_name, &meow);
+                        create_structs(
+                            &mut state_conversions,
+                            &combined_struct_name,
+                            &remainder_struct_name,
+                            &meow,
+                        );
                     }
                     M::NewType {
                         field_number,
@@ -144,19 +160,31 @@ pub fn state_filter_input(input: TokenStream) -> TokenStream {
                             quote::format_ident!("__StateValidationGeneration_{name}Combined_{i}");
                         let remainder_struct_name =
                             quote::format_ident!("__StateValidationGeneration_{name}Remainder_{i}");
-                        a(&combined_struct_name, &remainder_struct_name, &meow);
+                        create_structs(
+                            &mut state_conversions,
+                            &combined_struct_name,
+                            &remainder_struct_name,
+                            &meow,
+                        );
                         let (field_name, field_type, field_generics) = meow.current_field;
                         let (other_field_names, other_field_types, other_field_generics) =
                             meow.other_fields;
+                        let other_field_generics: Vec<_> =
+                            other_field_generics.into_iter().flatten().collect();
+                        let all_field_generics: Vec<_> = other_field_generics
+                            .clone()
+                            .into_iter()
+                            .chain(field_generics.into_iter().flatten())
+                            .collect();
                         let remainder_struct_name = quote::format_ident!(
                             "__StateValidationGeneration_{name}RemainderField_{field_number}"
                         );
                         let q = quote::quote! {
-                            impl <#(#field_generics),* #(#(#other_field_generics),*)*> state_validation::StateFilterInputCombination<#field_type> for #remainder_struct_name <#(#(#other_field_generics),*)*> {
-                                type Combined = #combined_struct_name <#(#field_generics),* #(#(#other_field_generics),*)*>;
-                                fn combine(self, value: #field_type) -> Self::Combined {
+                            impl <#(#all_field_generics),*> state_validation::StateFilterInputCombination<(#(#field_type),*)> for #remainder_struct_name <#(#other_field_generics),*> {
+                                type Combined = #combined_struct_name <#(#all_field_generics),*>;
+                                fn combine(self, (#(#field_name),*): (#(#field_type),*)) -> Self::Combined {
                                     #combined_struct_name {
-                                        #field_name: value,
+                                        #(#field_name,)*
                                         #(#other_field_names: self.#other_field_names),*
                                     }
                                 }
@@ -171,16 +199,117 @@ pub fn state_filter_input(input: TokenStream) -> TokenStream {
                         let remainder_struct_name = quote::format_ident!(
                             "__StateValidationGeneration_{name}RemainderField_{field_number}"
                         );
-                        a(&combined_struct_name, &remainder_struct_name, &meow);
+                        create_structs(
+                            &mut state_conversions,
+                            &combined_struct_name,
+                            &remainder_struct_name,
+                            &meow,
+                        );
                         let (field_name, field_type, field_generics) = meow.current_field;
                         let (other_field_names, other_field_types, other_field_generics) =
                             meow.other_fields;
+                        let other_field_generics: Vec<_> =
+                            other_field_generics.into_iter().flatten().collect();
+                        let all_field_generics: Vec<_> = other_field_generics
+                            .clone()
+                            .into_iter()
+                            .chain(field_generics.into_iter().flatten())
+                            .collect();
                         let q = quote::quote! {
-                            impl <#(#generics),* #(#field_generics),*> state_validation::StateFilterInputConversion<#field_type> for #name #ty_generics #where_clause {
-                                type Remainder = #remainder_struct_name;
-                                fn split_take(self) -> (#field_type, Self::Remainder) {
+                            impl <#(#all_field_generics),*> state_validation::StateFilterInputConversion<(#(#field_type),*)> for #name #ty_generics #where_clause {
+                                type Remainder = #remainder_struct_name <#(#other_field_generics),*>;
+                                fn split_take(self) -> ((#(#field_type),*), Self::Remainder) {
                                     (
-                                        self.#field_name,
+                                        (#(self.#field_name),*),
+                                        #remainder_struct_name {
+                                            #(#other_field_names: self.#other_field_names),*
+                                        },
+                                    )
+                                }
+                            }
+                        };
+                        state_conversions.push(q);
+                    }
+                }
+            }
+            for (i, m) in MultipleFieldCombinationIter::new(iter).enumerate() {
+                match m {
+                    MM::MultipleFields {
+                        field_number,
+                        type_number,
+                        meows,
+                    } => {
+                        let combined_struct_name = quote::format_ident!(
+                            "__StateValidationGeneration_Multiple{name}Combined_{i}"
+                        );
+                        let remainder_struct_name = quote::format_ident!(
+                            "__StateValidationGeneration_Multiple{name}Remainder_{i}"
+                        );
+                        let (field_name, field_type, field_generics) = meows.current_field;
+                        let (other_field_names, other_field_types, other_field_generics) =
+                            meows.other_fields;
+                        let other_field_generics: Vec<_> =
+                            other_field_generics.into_iter().flatten().collect();
+                        let all_field_generics: Vec<_> = other_field_generics
+                            .clone()
+                            .into_iter()
+                            .chain(field_generics.into_iter().flatten())
+                            .collect();
+                        let q = quote::quote! {
+                            pub struct #combined_struct_name <#(#all_field_generics),*> {
+                                #(#field_name: #field_type,)*
+                                #(#other_field_names: #other_field_types),*
+                            }
+                            pub struct #remainder_struct_name <#(#other_field_generics),*> {
+                                #(#other_field_names: #other_field_types),*
+                            }
+                            impl <#(#all_field_generics),*> state_validation::StateFilterInputConversion<(#(#field_type),*)> for #name #ty_generics #where_clause {
+                                type Remainder = #remainder_struct_name <#(#other_field_generics),*>;
+                                fn split_take(self) -> ((#(#field_type),*), Self::Remainder) {
+                                    (
+                                        (#(self.#field_name),*),
+                                        #remainder_struct_name {
+                                            #(#other_field_names: self.#other_field_names),*
+                                        },
+                                    )
+                                }
+                            }
+                        };
+                        state_conversions.push(q);
+                    }
+                    MM::NewFieldMultipleFields {
+                        field_number,
+                        meows,
+                    } => {
+                        let combined_struct_name = quote::format_ident!(
+                            "__StateValidationGeneration_Multiple{name}CombinedField_{i}"
+                        );
+                        let remainder_struct_name = quote::format_ident!(
+                            "__StateValidationGeneration_Multiple{name}RemainderField_{i}"
+                        );
+                        let (field_name, field_type, field_generics) = meows.current_field;
+                        let (other_field_names, other_field_types, other_field_generics) =
+                            meows.other_fields;
+                        let other_field_generics: Vec<_> =
+                            other_field_generics.into_iter().flatten().collect();
+                        let all_field_generics: Vec<_> = other_field_generics
+                            .clone()
+                            .into_iter()
+                            .chain(field_generics.clone().into_iter().flatten())
+                            .collect();
+                        let q = quote::quote! {
+                            pub struct #combined_struct_name <#(#all_field_generics),*> {
+                                #(#field_name: #field_type,)*
+                                #(#other_field_names: #other_field_types),*
+                            }
+                            pub struct #remainder_struct_name <#(#other_field_generics),*> {
+                                #(#other_field_names: #other_field_types),*
+                            }
+                            impl <#(#all_field_generics),*> state_validation::StateFilterInputConversion<(#(#field_type),*)> for #name #ty_generics #where_clause {
+                                type Remainder = #remainder_struct_name <#(#other_field_generics),*>;
+                                fn split_take(self) -> ((#(#field_type),*), Self::Remainder) {
+                                    (
+                                        (#(self.#field_name),*),
                                         #remainder_struct_name {
                                             #(#other_field_names: self.#other_field_names),*
                                         },
@@ -223,6 +352,40 @@ impl<'a> FieldCombinationIter<'a> {
             .collect();
         FieldCombinationIter {
             current_field: Some(CurrentFieldCursor::new(current_field, current_field_types)),
+            current_other_fields,
+            current_iteration: 0,
+            max_iteration,
+            first_iteration: true,
+            type_iteration: 0,
+        }
+    }
+}
+struct MultipleFieldCombinationIter<'a> {
+    current_fields: Vec<CurrentFieldCursor<'a>>,
+    current_other_fields: Vec<CurrentFieldCursor<'a>>,
+    current_iteration: usize,
+    max_iteration: usize,
+    first_iteration: bool,
+    type_iteration: usize,
+}
+impl<'a> MultipleFieldCombinationIter<'a> {
+    fn new(mut fields: Vec<(&'a Ident, Vec<ConversionType>)>) -> Self {
+        let max_iteration = fields.len();
+        let (current_field_0, current_field_types_0) =
+            fields.pop().expect("expected at least two field");
+        let (current_field_1, current_field_types_1) =
+            fields.pop().expect("expected at least two field");
+        let current_other_fields = fields
+            .into_iter()
+            .map(|(field_name, conversion_types)| {
+                CurrentFieldCursor::new(field_name, conversion_types)
+            })
+            .collect();
+        MultipleFieldCombinationIter {
+            current_fields: vec![
+                CurrentFieldCursor::new(current_field_0, current_field_types_0),
+                CurrentFieldCursor::new(current_field_1, current_field_types_1),
+            ],
             current_other_fields,
             current_iteration: 0,
             max_iteration,
@@ -280,8 +443,8 @@ enum M<'a> {
     },
 }
 struct Meow<'a> {
-    // (field_names, field_types, TODO: field_generics)
-    current_field: (&'a Ident, ConversionType, Vec<Ident>),
+    // (field_names, field_types, field_generics)
+    current_field: (Vec<&'a Ident>, Vec<ConversionType>, Vec<Vec<Ident>>),
     other_fields: (Vec<&'a Ident>, Vec<ConversionType>, Vec<Vec<Ident>>),
 }
 impl<'a> Iterator for FieldCombinationIter<'a> {
@@ -342,9 +505,9 @@ impl<'a> Iterator for FieldCombinationIter<'a> {
                             field_number: self.current_iteration,
                             meow: Meow {
                                 current_field: (
-                                    current_cursor.field_name,
-                                    current_cursor.last_current_type.clone(),
-                                    current_field_generics,
+                                    vec![current_cursor.field_name],
+                                    vec![current_cursor.last_current_type.clone()],
+                                    vec![current_field_generics],
                                 ),
                                 other_fields: (
                                     other_field_names,
@@ -358,9 +521,9 @@ impl<'a> Iterator for FieldCombinationIter<'a> {
                             type_number: self.type_iteration,
                             meow: Meow {
                                 current_field: (
-                                    current_cursor.field_name,
-                                    current_cursor.last_current_type.clone(),
-                                    current_field_generics,
+                                    vec![current_cursor.field_name],
+                                    vec![current_cursor.last_current_type.clone()],
+                                    vec![current_field_generics],
                                 ),
                                 other_fields: (
                                     other_field_names,
@@ -373,9 +536,9 @@ impl<'a> Iterator for FieldCombinationIter<'a> {
                             field_number: self.current_iteration,
                             meow: Meow {
                                 current_field: (
-                                    current_cursor.field_name,
-                                    current_cursor.last_current_type.clone(),
-                                    current_field_generics,
+                                    vec![current_cursor.field_name],
+                                    vec![current_cursor.last_current_type.clone()],
+                                    vec![current_field_generics],
                                 ),
                                 other_fields: (
                                     other_field_names,
@@ -412,6 +575,76 @@ impl<'a> Iterator for FieldCombinationIter<'a> {
                         self.current_field = None;
                     }
                 }
+            } else {
+                break None;
+            }
+        }
+    }
+}
+enum MM<'a> {
+    NewFieldMultipleFields {
+        field_number: usize,
+        meows: Meow<'a>,
+    },
+    MultipleFields {
+        field_number: usize,
+        type_number: usize,
+        meows: Meow<'a>,
+    },
+}
+impl<'a> Iterator for MultipleFieldCombinationIter<'a> {
+    type Item = MM<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.first_iteration {
+                self.first_iteration = false;
+                let current_fields = self
+                    .current_fields
+                    .iter()
+                    .map(|cursor| {
+                        let current_field_generics = if let ConversionType::Generic {
+                            generic_ident,
+                            path,
+                        } = &cursor.last_current_type
+                        {
+                            generic_ident.clone()
+                        } else {
+                            Vec::new()
+                        };
+                        (
+                            cursor.field_name,
+                            cursor.last_current_type.clone(),
+                            current_field_generics,
+                        )
+                    })
+                    .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
+                let current_other_fields = self
+                    .current_other_fields
+                    .iter()
+                    .map(|cursor| {
+                        let current_field_generics = if let ConversionType::Generic {
+                            generic_ident,
+                            path,
+                        } = &cursor.last_current_type
+                        {
+                            generic_ident.clone()
+                        } else {
+                            Vec::new()
+                        };
+                        (
+                            cursor.field_name,
+                            cursor.last_current_type.clone(),
+                            current_field_generics,
+                        )
+                    })
+                    .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
+                break Some(MM::NewFieldMultipleFields {
+                    field_number: self.current_iteration,
+                    meows: Meow {
+                        current_field: current_fields,
+                        other_fields: current_other_fields,
+                    },
+                });
             } else {
                 break None;
             }
