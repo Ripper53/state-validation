@@ -8,13 +8,6 @@ use syn::{
     parse_macro_input, parse_quote,
 };
 
-#[derive(darling::FromDeriveInput)]
-#[darling(attributes(state_filter_input))]
-struct StateFilterInputData {
-    remainder_type: Option<Type>,
-    remainder: Option<Expr>,
-}
-
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct ConversionSort {
     sort_number: usize,
@@ -74,8 +67,8 @@ impl quote::ToTokens for ConversionType {
     }
 }
 
-#[proc_macro_derive(StateFilterInput, attributes(state_filter_input, conversion))]
-pub fn state_filter_input(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(StateFilterConversion, attributes(conversion))]
+pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as syn::DeriveInput);
     let name = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
@@ -85,7 +78,6 @@ pub fn state_filter_input(input: TokenStream) -> TokenStream {
         .into_iter()
         .map(|ty| ty.ident.clone())
         .collect();
-    //let data = StateFilterInputData::from_derive_input(&ast).unwrap();
     let state_conversions = match &ast.data {
         syn::Data::Struct(s) => {
             let fields_count = s.fields.len();
@@ -476,8 +468,8 @@ fn extract_generics_from_type(ty: &Type) -> Generics {
     generics
 }
 
-fn collect_generics<'a>(
-    ty: &'a Type,
+fn collect_generics(
+    ty: &Type,
     type_params: &mut BTreeSet<syn::Ident>,
     lifetime_params: &mut BTreeSet<Lifetime>,
     const_params: &mut BTreeSet<syn::Ident>,

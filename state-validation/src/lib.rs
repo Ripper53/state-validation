@@ -4,20 +4,20 @@
 //! Ex. You want to remove an admin from `UserStorage`, given a `UserID`, you want to retrieve the `User` who maps onto the `UserID` and validate they are an existing user whose privilege level is admin.
 //! The state is `UserStorage`, the input is a `UserID`, and the valid output is an `AdminUser`.
 //!
-//! Here is our input `UserID`, each input should be marked with the `StateFilterInput` derive macro:
+//! Here is our input `UserID`:
 //! ```
 //! # use std::collections::{HashSet, HashMap};
-//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
-//! #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # use state_validation::{Validator, ValidAction, StateFilter, Condition};
+//! #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 //! struct UserID(usize);
 //! ```
 //! Our `User` which holds its `UserID` and `username`:
 //! ```
 //! # use std::collections::{HashSet, HashMap};
-//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
-//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # use state_validation::{Validator, ValidAction, StateFilter, Condition};
+//! # #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 //! # struct UserID(usize);
-//! #[derive(StateFilterInput, Clone)]
+//! #[derive(Clone)]
 //! struct User {
 //!     id: UserID,
 //!     username: String,
@@ -26,10 +26,10 @@
 //! Our state will be `UserStorage`:
 //! ```
 //! # use std::collections::{HashSet, HashMap};
-//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
-//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # use state_validation::{Validator, ValidAction, StateFilter, Condition};
+//! # #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 //! # struct UserID(usize);
-//! # #[derive(StateFilterInput, Clone)]
+//! # #[derive(Clone)]
 //! # struct User {
 //! #     id: UserID,
 //! #     username: String,
@@ -43,10 +43,10 @@
 //! This will also be the output of our filter which checks if a user is admin:
 //! ```
 //! # use std::collections::{HashSet, HashMap};
-//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
-//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # use state_validation::{Validator, ValidAction, StateFilter, Condition};
+//! # #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 //! # struct UserID(usize);
-//! # #[derive(StateFilterInput, Clone)]
+//! # #[derive(Clone)]
 //! # struct User {
 //! #     id: UserID,
 //! #     username: String,
@@ -55,16 +55,15 @@
 //! # struct UserStorage {
 //! #     maps: HashMap<UserID, User>,
 //! # }
-//! #[derive(StateFilterInput)]
 //! struct AdminUser(User);
 //! ```
 //! Our first filter will check if a `User` exists given a `UserID`:
 //! ```
 //! # use std::collections::{HashSet, HashMap};
-//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
-//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # use state_validation::{Validator, ValidAction, StateFilter, Condition};
+//! # #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 //! # struct UserID(usize);
-//! # #[derive(StateFilterInput, Clone)]
+//! # #[derive(Clone)]
 //! # struct User {
 //! #     id: UserID,
 //! #     username: String,
@@ -73,7 +72,6 @@
 //! # struct UserStorage {
 //! #     maps: HashMap<UserID, User>,
 //! # }
-//! # #[derive(StateFilterInput)]
 //! # struct AdminUser(User);
 //! struct UserExists;
 //! # #[derive(Debug)]
@@ -99,10 +97,10 @@
 //! Our second filter will check if a `User` is admin:
 //! ```
 //! # use std::collections::{HashSet, HashMap};
-//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
-//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # use state_validation::{Validator, ValidAction, StateFilter, Condition};
+//! # #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 //! # struct UserID(usize);
-//! # #[derive(StateFilterInput, Clone)]
+//! # #[derive(Clone)]
 //! # struct User {
 //! #     id: UserID,
 //! #     username: String,
@@ -111,7 +109,6 @@
 //! # struct UserStorage {
 //! #     maps: HashMap<UserID, User>,
 //! # }
-//! # #[derive(StateFilterInput)]
 //! # struct AdminUser(User);
 //! #
 //! struct UserIsAdmin;
@@ -140,10 +137,10 @@
 //! Now, we can finally implement an action that removes the admin from user storage:
 //! ```
 //! # use std::collections::{HashSet, HashMap};
-//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
-//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # use state_validation::{Validator, ValidAction, StateFilter, Condition};
+//! # #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 //! # struct UserID(usize);
-//! # #[derive(StateFilterInput, Clone)]
+//! # #[derive(Clone)]
 //! # struct User {
 //! #     id: UserID,
 //! #     username: String,
@@ -152,7 +149,6 @@
 //! # struct UserStorage {
 //! #     maps: HashMap<UserID, User>,
 //! # }
-//! # #[derive(StateFilterInput)]
 //! # struct AdminUser(User);
 //! # struct UserExists;
 //! # #[derive(Debug)]
@@ -222,10 +218,10 @@
 //! otherwise we get a validator that we can run an action on:
 //! ```
 //! # use std::collections::{HashSet, HashMap};
-//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
-//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # use state_validation::{Validator, ValidAction, StateFilter, Condition};
+//! # #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 //! # struct UserID(usize);
-//! # #[derive(StateFilterInput, Clone)]
+//! # #[derive(Clone)]
 //! # struct User {
 //! #     id: UserID,
 //! #     username: String,
@@ -234,7 +230,6 @@
 //! # struct UserStorage {
 //! #     maps: HashMap<UserID, User>,
 //! # }
-//! # #[derive(StateFilterInput)]
 //! # struct AdminUser(User);
 //! # struct UserExists;
 //! # #[derive(Debug)]
@@ -314,21 +309,20 @@
 //! Another example using `UserExists` filter, and `UserIsAdmin` filter in the body of the [`ValidAction`]:
 //! ```
 //! # use std::collections::{HashSet, HashMap};
-//! # use state_validation::{Validator, ValidAction, StateFilterInput, StateFilter, Condition};
-//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # use state_validation::{Validator, ValidAction, StateFilter, Condition};
+//! # #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 //! # struct UserID(usize);
 //! #
 //! # #[derive(Default)]
 //! # struct UserStorage {
 //! #     maps: HashMap<UserID, User>,
 //! # }
-//! # #[derive(StateFilterInput, Clone)]
+//! # #[derive(Clone)]
 //! # struct User {
 //! #     id: UserID,
 //! #     username: String,
 //! # }
 //! #
-//! # #[derive(StateFilterInput)]
 //! # struct AdminUser(User);
 //! #
 //! # struct UserExists;
@@ -428,6 +422,29 @@
 //! ```
 //!
 //! ## [`StateFilterInputConversion`] & [`StateFilterInputCombination`]
+//! Automatic implementations of [`StateFilterInputConversion`] and [`StateFilterInputCombination`]
+//! are generated with the [`StateFilterConversion`] derive macro.
+//! Example:
+//! ```
+//! # use state_validation::StateFilterConversion;
+//! # struct UserID(usize);
+//! # struct User;
+//! #[derive(StateFilterConversion)]
+//! struct UserWithUserName {
+//!     #[conversion(User)]
+//!     user_id: UserID,
+//!     username: String,
+//! }
+//! ```
+//! Now, `UserWithUsername` can be broken down into `User`, `UserID`, and `String`.
+//! Take advantage of the newtype pattern to breakdown the input further.
+//! For example, instead of having username as a `String`, use:
+//! ```
+//! struct Username(String);
+//! ```
+//! This way, the compiler can differentiate between a `String` and a `Username`.
+//!
+//!
 //! The [`StateFilterInputConversion`] and [`StateFilterInputCombination`] traits work together
 //! to allow splitting the input down into its parts and then back together.
 //!
@@ -436,7 +453,7 @@
 //! which will be combined with the output of the filter. And, each consecutive filter can split
 //! whatever input they desire and combine their output with the remainder they did not touch.
 //!
-//! Here is an example: Assume we wanted to change the username of a user,
+//! Here is an example with manual implementations: Assume we wanted to change the username of a user,
 //! if its `UserID` and current username matched that of the input.
 //! First, let's create its input:
 //! ```
@@ -527,10 +544,10 @@
 //! Finally, we can run our action to update the user's username:
 //! ```
 //! # use std::collections::HashMap;
-//! # use state_validation::{ValidAction, Condition, StateFilter, StateFilterInput, StateFilterInputConversion, StateFilterInputCombination};
-//! # #[derive(StateFilterInput, Hash, PartialEq, Eq, Clone, Copy)]
+//! # use state_validation::{ValidAction, Condition, StateFilter, StateFilterInputConversion, StateFilterInputCombination};
+//! # #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 //! # struct UserID(usize);
-//! # #[derive(StateFilterInput, Clone)]
+//! # #[derive(Clone)]
 //! # struct User {
 //! #     id: UserID,
 //! #     username: String,
@@ -559,7 +576,6 @@
 //! #         }
 //! #     }
 //! # }
-//! # #[derive(StateFilterInput)]
 //! # struct UserWithUsername {
 //! #     user_id: UserID,
 //! #     username: String,
@@ -571,7 +587,6 @@
 //! #         (self.user_id, UsernameForUserID(self.username))
 //! #     }
 //! # }
-//! # #[derive(StateFilterInput)]
 //! # struct UsernameForUser {
 //! #     user: User,
 //! #     username: String,
