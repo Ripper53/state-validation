@@ -887,14 +887,6 @@ pub enum StateFilterEightChainError<E0: std::error::Error, E1: std::error::Error
     Filter7(E7),
 }
 
-pub trait StateFilterInput {}
-macro_rules! impl_state_filter_input_for_tuple {
-    ($($t: ident),*) => {
-        impl<$($t: StateFilterInput),*> StateFilterInput for ($($t,)*) {}
-    };
-}
-variadics_please::all_tuples!(impl_state_filter_input_for_tuple, 1, 16, T);
-
 pub trait StateFilterInputConversion<T> {
     type Remainder;
     fn split_take(self) -> (T, Self::Remainder);
@@ -905,35 +897,16 @@ pub trait StateFilterInputCombination<T> {
     fn combine(self, value: T) -> Self::Combined;
 }
 
-impl<T: StateFilterInput> StateFilterInputCombination<T> for () {
+impl<T> StateFilterInputConversion<T> for T {
+    type Remainder = ();
+    fn split_take(self) -> (T, Self::Remainder) {
+        (self, ())
+    }
+}
+
+impl<T> StateFilterInputCombination<T> for () {
     type Combined = T;
     fn combine(self, value: T) -> Self::Combined {
         value
-    }
-}
-impl<T: StateFilterInput, U: StateFilterInput> StateFilterInputCombination<(T,)> for (U,) {
-    type Combined = (U, T);
-    fn combine(self, value: (T,)) -> Self::Combined {
-        (self.0, value.0)
-    }
-}
-impl<T: StateFilterInput, U: StateFilterInput> StateFilterInputCombination<(T,)> for (U, ()) {
-    type Combined = (U, T);
-    fn combine(self, value: (T,)) -> Self::Combined {
-        (self.0, value.0)
-    }
-}
-impl<T: StateFilterInput, U0: StateFilterInput, U1: StateFilterInput> StateFilterInputCombination<(T,)>
-    for (U0, U1)
-{
-    type Combined = (U0, U1, T);
-    fn combine(self, value: (T,)) -> Self::Combined {
-        (self.0, self.1, value.0)
-    }
-}
-impl<U0: StateFilterInput, U1: StateFilterInput> StateFilterInputCombination<()> for (U0, U1) {
-    type Combined = (U0, U1);
-    fn combine(self, (): ()) -> Self::Combined {
-        (self.0, self.1)
     }
 }

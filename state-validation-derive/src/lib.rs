@@ -157,7 +157,7 @@ pub fn state_filter_input(input: TokenStream) -> TokenStream {
                 }
                 let q = quote::quote! {
                     pub struct #combination_struct_name #generics {
-                        #(#field_names: #field_types),*
+                        #(pub #field_names: #field_types),*
                     }
                 };
                 state_conversions.push(q);
@@ -321,9 +321,10 @@ pub fn state_filter_input(input: TokenStream) -> TokenStream {
         _ => todo!(),
     };
     quote::quote! {
-        impl #impl_generics state_validation::StateFilterInput for #name #ty_generics #where_clause {}
+        //impl #impl_generics state_validation::StateFilterInput for #name #ty_generics #where_clause {}
         #(#state_conversions)*
-    }.into()
+    }
+    .into()
 }
 
 fn create_original_conversion_combinations(
@@ -500,10 +501,10 @@ fn collect_generics<'a>(
                                 lifetime_params.insert(lt.clone());
                             }
                             GenericArgument::Const(expr) => {
-                                if let syn::Expr::Path(expr_path) = expr {
-                                    if let Some(ident) = expr_path.path.get_ident() {
-                                        const_params.insert(ident.clone());
-                                    }
+                                if let syn::Expr::Path(expr_path) = expr
+                                    && let Some(ident) = expr_path.path.get_ident()
+                                {
+                                    const_params.insert(ident.clone());
                                 }
                             }
                             _ => {}

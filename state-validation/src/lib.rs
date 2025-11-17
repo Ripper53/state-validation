@@ -653,15 +653,13 @@ pub use state_filter::*;
 #[cfg(feature = "derive")]
 pub use state_validation_derive::*;
 
-pub struct Validator<State, Input: StateFilterInput, Filter: StateFilter<State, Input>> {
+pub struct Validator<State, Input, Filter: StateFilter<State, Input>> {
     state: State,
     value: Filter::ValidOutput,
     _p: std::marker::PhantomData<(Input, Filter)>,
 }
 
-impl<State, Input: StateFilterInput, Filter: StateFilter<State, Input>>
-    Validator<State, Input, Filter>
-{
+impl<State, Input, Filter: StateFilter<State, Input>> Validator<State, Input, Filter> {
     pub fn try_new(state: State, input: Input) -> Result<Self, Filter::Error> {
         let value = Filter::filter(&state, input)?;
         Ok(Validator {
