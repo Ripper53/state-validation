@@ -33,19 +33,17 @@ enum ConversionType {
     Type(syn::Type),
     Generic {
         generic_ident: Vec<syn::Ident>,
-        path: syn::Path,
+        ty: syn::Type,
     },
 }
 impl syn::parse::Parse for ConversionType {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         if input.peek(syn::Ident) && input.peek2(syn::Token![=]) {
             let generic_ident = input.parse()?;
+            let generic_ident = vec![generic_ident];
             let _: syn::Token![=] = input.parse()?;
-            let path = input.parse()?;
-            Ok(ConversionType::Generic {
-                generic_ident: vec![generic_ident],
-                path,
-            })
+            let ty = input.parse()?;
+            Ok(ConversionType::Generic { generic_ident, ty })
         } else {
             input.parse().map(ConversionType::Type)
         }
@@ -57,11 +55,8 @@ impl quote::ToTokens for ConversionType {
             ConversionType::Type(ty) => {
                 tokens.append_all(ty.to_token_stream());
             }
-            ConversionType::Generic {
-                generic_ident,
-                path,
-            } => {
-                tokens.append_all(quote::quote!(#path));
+            ConversionType::Generic { generic_ident, ty } => {
+                tokens.append_all(quote::quote!(#ty));
             }
         }
     }
