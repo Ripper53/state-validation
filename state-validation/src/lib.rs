@@ -683,6 +683,9 @@ impl<State, Input, Filter: StateFilter<State, Input>> Validator<State, Input, Fi
             _p: std::marker::PhantomData::default(),
         })
     }
+    pub fn valid_output(&self) -> &Filter::ValidOutput {
+        &self.value
+    }
     pub fn execute<Action: ValidAction<State, Input, Filter = Filter>>(
         self,
         valid_action: Action,
