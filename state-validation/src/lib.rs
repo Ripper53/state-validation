@@ -675,13 +675,18 @@ pub struct Validator<State, Input, Filter: StateFilter<State, Input>> {
 }
 
 impl<State, Input, Filter: StateFilter<State, Input>> Validator<State, Input, Filter> {
-    pub fn try_new(state: State, input: Input) -> Result<Self, Filter::Error> {
-        let value = Filter::filter(&state, input)?;
-        Ok(Validator {
-            state,
-            value,
-            _p: std::marker::PhantomData::default(),
-        })
+    pub fn try_new(
+        state: State,
+        input: Input,
+    ) -> Result<Self, ValidationError<State, Filter::Error>> {
+        match Filter::filter(&state, input) {
+            Ok(value) => Ok(Validator {
+                state,
+                value,
+                _p: std::marker::PhantomData::default(),
+            }),
+            Err(error) => Err(ValidationError { state, error }),
+        }
     }
     pub fn valid_output(&self) -> &Filter::ValidOutput {
         &self.value
@@ -691,5 +696,18 @@ impl<State, Input, Filter: StateFilter<State, Input>> Validator<State, Input, Fi
         valid_action: Action,
     ) -> Action::Output {
         valid_action.with_valid_input(self.state, self.value)
+    }
+}
+
+#[derive(thiserror::Error)]
+pub struct ValidationError<State, E: std::error::Error> {
+    pub state: State,
+    #[source]
+    pub error: E,
+}
+
+impl<State, E: std::error::Error> std::fmt::Debug for ValidationError<State, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.error, f)
     }
 }
