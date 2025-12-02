@@ -66,13 +66,6 @@ impl quote::ToTokens for ConversionType {
 pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as syn::DeriveInput);
     let name = &ast.ident;
-    let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
-    let generics: Vec<_> = ast
-        .generics
-        .type_params()
-        .into_iter()
-        .map(|ty| ty.ident.clone())
-        .collect();
     let state_conversions = match &ast.data {
         syn::Data::Struct(s) => {
             let fields_count = s.fields.len();
@@ -90,7 +83,7 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
                             sort_number: i,
                             ty: ConversionType::Type(field.ty.clone()),
                         },
-                        extract_generics_from_type(&field.ty),
+                        extract_generics_from_type(&field.ty, &ast.generics),
                     ));
                     for attr in field
                         .attrs
@@ -101,7 +94,9 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
                             .parse_args::<ConversionType>()
                             .expect("expected a conversion type");
                         let generics = match &f {
-                            ConversionType::Type(ty) => extract_generics_from_type(ty),
+                            ConversionType::Type(ty) => {
+                                extract_generics_from_type(ty, &ast.generics)
+                            }
                             ConversionType::Generic { generic_ident, .. } => {
                                 parse_quote!(<#(#generic_ident),*>)
                             }
@@ -185,11 +180,12 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
             }
             create_original_conversion_combinations(
                 &mut state_conversions,
+                &ast.generics,
                 &combination_names,
                 &remainder_names,
                 name,
                 &s.fields,
-                generics,
+                ast.generics.clone(),
             );
             let cartesian_product = iter.iter().multi_cartesian_product().map(|f| {
                 let mut field_names = Vec::with_capacity(f.len());
@@ -316,11 +312,12 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
 
 fn create_original_conversion_combinations(
     state_conversions: &mut Vec<proc_macro2::TokenStream>,
+    original_generics: &Generics,
     combination_names: &HashMap<Vec<ConversionSort>, Ident>,
     remainder_names: &HashMap<Vec<ConversionSort>, Ident>,
     name: &Ident,
     fields: &syn::Fields,
-    all_field_generics: Vec<Ident>,
+    mut all_field_generics: Generics,
 ) {
     let fields: Vec<_> = fields
         .iter()
@@ -333,11 +330,10 @@ fn create_original_conversion_combinations(
                     sort_number: i,
                     ty: ConversionType::Type(field.ty.clone()),
                 },
-                extract_generics_from_type(&field.ty),
+                extract_generics_from_type(&field.ty, original_generics),
             )
         })
         .collect();
-    let mut all_field_generics: Generics = parse_quote!();
     for (_, _, generics_b) in fields.iter() {
         all_field_generics = merge_generics(all_field_generics, generics_b);
     }
@@ -432,13 +428,14 @@ fn create_original_conversion_combinations(
 
 // UTILITY //
 
-fn extract_generics_from_type(ty: &Type) -> Generics {
+fn extract_generics_from_type(ty: &Type, original_generics: &Generics) -> Generics {
     let mut type_params = BTreeSet::new();
     let mut lifetime_params = BTreeSet::new();
     let mut const_params = BTreeSet::new();
 
     collect_generics(
         ty,
+        original_generics,
         &mut type_params,
         &mut lifetime_params,
         &mut const_params,
@@ -465,6 +462,7 @@ fn extract_generics_from_type(ty: &Type) -> Generics {
 
 fn collect_generics(
     ty: &Type,
+    original_generics: &Generics,
     type_params: &mut BTreeSet<syn::Ident>,
     lifetime_params: &mut BTreeSet<Lifetime>,
     const_params: &mut BTreeSet<syn::Ident>,
@@ -477,8 +475,15 @@ fn collect_generics(
                     for arg in &args.args {
                         match arg {
                             GenericArgument::Type(inner_ty) => {
+                                if let Type::Path(p) = inner_ty
+                                    && let Some(ident) = p.path.get_ident()
+                                    && original_generics.type_params().any(|ty| ty.ident == *ident)
+                                {
+                                    type_params.insert(ident.clone());
+                                }
                                 collect_generics(
                                     inner_ty,
+                                    original_generics,
                                     type_params,
                                     lifetime_params,
                                     const_params,
@@ -504,7 +509,13 @@ fn collect_generics(
             if let Some(lt) = &r.lifetime {
                 lifetime_params.insert(lt.clone());
             }
-            collect_generics(&r.elem, type_params, lifetime_params, const_params);
+            collect_generics(
+                &r.elem,
+                original_generics,
+                type_params,
+                lifetime_params,
+                const_params,
+            );
         }
         _ => {}
     }
