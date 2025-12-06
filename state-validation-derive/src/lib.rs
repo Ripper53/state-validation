@@ -44,6 +44,18 @@ impl syn::parse::Parse for ConversionType {
             let _: syn::Token![=] = input.parse()?;
             let ty = input.parse()?;
             Ok(ConversionType::Generic { generic_ident, ty })
+        } else if input.peek(syn::Ident) && input.peek2(syn::Token![,]) {
+            let mut generic_ident = Vec::with_capacity(2);
+            loop {
+                let generic = input.parse::<syn::Ident>()?;
+                generic_ident.push(generic);
+                if input.parse::<syn::Token![,]>().is_err() {
+                    break;
+                }
+            }
+            let _: syn::Token![=] = input.parse()?;
+            let ty = input.parse()?;
+            Ok(ConversionType::Generic { generic_ident, ty })
         } else {
             input.parse().map(ConversionType::Type)
         }
@@ -109,6 +121,9 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
                             },
                             generics,
                         ));
+                        /*if attr.path().is_ident("flatten") {
+                            let ty = field.ty;
+                        }*/
                     }
                     all_conversion_fields
                 })
@@ -304,7 +319,6 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
         _ => todo!(),
     };
     quote::quote! {
-        //impl #impl_generics state_validation::StateFilterInput for #name #ty_generics #where_clause {}
         #(#state_conversions)*
     }
     .into()
