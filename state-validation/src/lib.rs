@@ -688,6 +688,9 @@ impl<State, Input, Filter: StateFilter<State, Input>> Validator<State, Input, Fi
             Err(error) => Err(ValidationError { state, error }),
         }
     }
+    pub fn state(&self) -> &State {
+        &self.state
+    }
     pub fn valid_output(&self) -> &Filter::ValidOutput {
         &self.value
     }
