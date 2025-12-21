@@ -657,6 +657,8 @@
 
 mod action;
 mod condition;
+#[cfg(feature = "dynamic")]
+pub mod dynamic;
 #[cfg(feature = "input_collector")]
 mod input_collector;
 mod state_filter;
