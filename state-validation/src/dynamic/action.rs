@@ -67,7 +67,7 @@ impl<State, Input, Output> Clone for DynValidAction<State, Input, Output> {
     fn clone(&self) -> Self {
         DynValidAction {
             filter: self.filter.clone(),
-            valid_action: self.valid_action.any_clone(),
+            valid_action: (*self.valid_action).any_clone(),
             action: self.action,
         }
     }
