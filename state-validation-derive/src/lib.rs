@@ -1,14 +1,15 @@
 use std::collections::{BTreeSet, HashMap};
 
+use heck::ToSnakeCase;
 use itertools::Itertools;
 use proc_macro::TokenStream;
 use quote::TokenStreamExt;
 use syn::{
-    Expr, GenericArgument, GenericParam, Generics, Ident, Lifetime, Type, TypePath,
+    Expr, GenericArgument, GenericParam, Generics, Ident, Lifetime, Type, TypePath, ext,
     parse_macro_input, parse_quote,
 };
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct ConversionSort {
     sort_number: usize,
     ty: ConversionType,
@@ -28,7 +29,7 @@ impl quote::ToTokens for ConversionSort {
         self.ty.to_tokens(tokens)
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum ConversionType {
     Type(syn::Type),
     Generic {
@@ -82,84 +83,127 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
         syn::Data::Struct(s) => {
             let fields_count = s.fields.len();
             let mut state_conversions = Vec::with_capacity(fields_count);
-            let iter: Vec<_> = s
-                .fields
-                .iter()
-                .enumerate()
-                .map(|(i, field)| {
-                    let field_name = field.ident.as_ref().expect("expected a named field");
-                    let mut all_conversion_fields = Vec::new();
-                    all_conversion_fields.push((
-                        field_name,
-                        ConversionSort {
-                            sort_number: i,
-                            ty: ConversionType::Type(field.ty.clone()),
-                        },
-                        extract_generics_from_type(&field.ty, &ast.generics),
-                    ));
-                    for attr in field
-                        .attrs
-                        .iter()
-                        .filter(|attr| attr.path().is_ident("conversion"))
-                    {
+            let (iter, extra_fields_count) = {
+                let mut iter: Vec<_> = s
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .map(|(i, field)| {
+                        let field_name = field.ident.as_ref().expect("expected a named field");
+                        let mut all_conversion_fields = Vec::new();
+                        all_conversion_fields.push((
+                            field_name.clone(),
+                            ConversionSort {
+                                sort_number: i,
+                                ty: ConversionType::Type(field.ty.clone()),
+                            },
+                            extract_generics_from_type(&field.ty, &ast.generics),
+                        ));
+                        for attr in field
+                            .attrs
+                            .iter()
+                            .filter(|attr| attr.path().is_ident("conversion"))
+                        {
+                            let f = attr
+                                .parse_args::<ConversionType>()
+                                .expect("expected a conversion type");
+                            let generics = match &f {
+                                ConversionType::Type(ty) => {
+                                    extract_generics_from_type(ty, &ast.generics)
+                                }
+                                ConversionType::Generic { generic_ident, .. } => {
+                                    parse_quote!(<#(#generic_ident),*>)
+                                }
+                            };
+                            all_conversion_fields.push((
+                                field_name.clone(),
+                                ConversionSort {
+                                    sort_number: i,
+                                    ty: f,
+                                },
+                                generics,
+                            ));
+                            /*if attr.path().is_ident("flatten") {
+                                let ty = field.ty;
+                            }*/
+                        }
+                        all_conversion_fields
+                    })
+                    .collect();
+                let extra_struct_fields: Vec<_> = ast
+                    .attrs
+                    .into_iter()
+                    .filter(|attr| attr.path().is_ident("conversion"))
+                    .enumerate()
+                    .map(|(i, attr)| {
                         let f = attr
                             .parse_args::<ConversionType>()
                             .expect("expected a conversion type");
-                        let generics = match &f {
-                            ConversionType::Type(ty) => {
-                                extract_generics_from_type(ty, &ast.generics)
-                            }
-                            ConversionType::Generic { generic_ident, .. } => {
-                                parse_quote!(<#(#generic_ident),*>)
-                            }
+                        let (field_name, generics) = match &f {
+                            ConversionType::Type(ty) => (
+                                quote::format_ident!(
+                                    "{}",
+                                    quote::quote!(#ty).to_string().to_snake_case(),
+                                ),
+                                extract_generics_from_type(ty, &ast.generics),
+                            ),
+                            ConversionType::Generic { generic_ident, ty } => (
+                                quote::format_ident!(
+                                    "{}",
+                                    quote::quote!(#ty).to_string().to_snake_case(),
+                                ),
+                                parse_quote!(<#(#generic_ident),*>),
+                            ),
                         };
-                        all_conversion_fields.push((
+                        // TODO: for now, the extra fields can be of only 1 type
+                        vec![(
                             field_name,
                             ConversionSort {
-                                sort_number: i,
+                                sort_number: i + iter.len(),
                                 ty: f,
                             },
                             generics,
-                        ));
-                        /*if attr.path().is_ident("flatten") {
-                            let ty = field.ty;
-                        }*/
-                    }
-                    all_conversion_fields
-                })
-                .collect();
+                        )]
+                    })
+                    .collect();
+                let extra_fields_count = extra_struct_fields.len();
+                iter.extend(extra_struct_fields);
+                (iter, extra_fields_count)
+            };
             let mut combination_names = HashMap::new();
             let mut remainder_names = HashMap::new();
-            for (i, (field_names, mut field_types, field_generics)) in iter
-                .iter()
-                .multi_cartesian_product()
-                .map(|f| {
-                    let mut field_names = Vec::with_capacity(f.len());
-                    let mut field_types = Vec::with_capacity(f.len());
-                    let mut generics = Vec::with_capacity(f.len());
-                    for (field_name, field_type, field_generics) in f {
-                        field_names.push(*field_name);
-                        field_types.push(field_type.clone());
-                        generics.push(field_generics);
+            // TODO: ASSUMES NO NEW DATA CAN BE CREATED
+            let mut i = 0;
+            for powerset in iter.iter().powerset() {
+                for (field_names, mut field_types, field_generics) in
+                    powerset.into_iter().multi_cartesian_product().map(|f| {
+                        let mut field_names = Vec::with_capacity(f.len());
+                        let mut field_types = Vec::with_capacity(f.len());
+                        let mut generics = Vec::with_capacity(f.len());
+                        for (field_name, field_type, field_generics) in f {
+                            field_names.push(field_name);
+                            field_types.push(field_type.clone());
+                            generics.push(field_generics);
+                        }
+                        (field_names, field_types, generics)
+                    })
+                {
+                    let combination_struct_name =
+                        quote::format_ident!("__StateValidationGeneration_{name}Combined_{i}");
+                    let mut generics = Generics::default();
+                    for g in field_generics {
+                        generics = merge_generics(generics, g);
                     }
-                    (field_names, field_types, generics)
-                })
-                .enumerate()
-            {
-                let combination_struct_name =
-                    quote::format_ident!("__StateValidationGeneration_{name}Combined_{i}");
-                let mut generics = Generics::default();
-                for g in field_generics {
-                    generics = merge_generics(generics, g);
+                    let q = quote::quote! {
+                        pub struct #combination_struct_name #generics {
+                            #(pub #field_names: #field_types),*
+                        }
+                    };
+                    state_conversions.push(q);
+                    field_types.sort();
+                    combination_names.insert(field_types, combination_struct_name);
+                    i += 1;
                 }
-                let q = quote::quote! {
-                    pub struct #combination_struct_name #generics {
-                        #(pub #field_names: #field_types),*
-                    }
-                };
-                state_conversions.push(q);
-                field_types.sort();
-                combination_names.insert(field_types, combination_struct_name);
             }
             let mut i = 0;
             for powerset in iter.iter().powerset() {
@@ -169,7 +213,7 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
                         let mut field_types = Vec::with_capacity(f.len());
                         let mut generics = Vec::with_capacity(f.len());
                         for (field_name, field_type, field_generics) in f {
-                            field_names.push(*field_name);
+                            field_names.push(field_name);
                             field_types.push(field_type.clone());
                             generics.push(field_generics);
                         }
@@ -224,7 +268,7 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
                     .zip(field_types.clone().into_iter())
                     .zip(field_generics.clone().into_iter())
                     .collect();
-                for count in 0..=fields_count {
+                for count in 0..=(fields_count + extra_fields_count) {
                     for f in fields_name_type_generics.iter().combinations(count) {
                         for (
                             current_field_names,
@@ -246,17 +290,17 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
                             let mut current_field_types = Vec::with_capacity(subset.len());
                             let mut current_field_generics = Vec::with_capacity(subset.len());
                             for ((field_name, field_type), generics) in subset {
-                                current_field_names.push(**field_name);
+                                current_field_names.push((*field_name).clone());
                                 current_field_types.push((*field_type).clone());
-                                current_field_generics.push(generics);
+                                current_field_generics.push((*generics).clone());
                             }
                             let mut other_field_names = Vec::with_capacity(remainder.len());
                             let mut other_field_types = Vec::with_capacity(remainder.len());
                             let mut other_field_generics = Vec::with_capacity(remainder.len());
                             for ((field_name, field_type), generics) in remainder {
-                                other_field_names.push(**field_name);
+                                other_field_names.push((*field_name).clone());
                                 other_field_types.push((*field_type).clone());
-                                other_field_generics.push(generics);
+                                other_field_generics.push((*generics).clone());
                             }
                             (
                                 current_field_names,
@@ -267,16 +311,15 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
                                 other_field_generics,
                             )
                         }) {
+                            let r = current_field_types
+                                .iter()
+                                .chain(other_field_types.iter())
+                                .cloned()
+                                .sorted()
+                                .collect::<Vec<_>>();
                             let combined_struct_name = combination_names
-                                .get(
-                                    &current_field_types
-                                        .iter()
-                                        .chain(other_field_types.iter())
-                                        .cloned()
-                                        .sorted()
-                                        .collect::<Vec<_>>(),
-                                )
-                                .expect("0: expected a combined struct");
+                                .get(&r)
+                                .expect(&format!("0: expected a combined struct: {:?}", r));
                             let remainder_struct_name = {
                                 let mut other_field_types = other_field_types.clone();
                                 other_field_types.sort();
@@ -284,7 +327,7 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
                             };
                             let mut o = Generics::default();
                             for other_field_generics in other_field_generics {
-                                o = merge_generics(o, other_field_generics);
+                                o = merge_generics(o, &other_field_generics);
                             }
                             let other_field_generics = o;
                             let q = quote::quote! {
@@ -373,17 +416,17 @@ fn create_original_conversion_combinations(
                 let mut current_field_types = Vec::with_capacity(subset.len());
                 let mut current_field_generics = Vec::new();
                 for (field_name, field_type, generics) in subset {
-                    current_field_names.push(*field_name);
-                    current_field_types.push((*field_type).clone());
-                    current_field_generics.push(generics);
+                    current_field_names.push((*field_name).clone());
+                    current_field_types.push(field_type.clone());
+                    current_field_generics.push(generics.clone());
                 }
                 let mut other_field_names = Vec::with_capacity(remainder.len());
                 let mut other_field_types = Vec::with_capacity(remainder.len());
                 let mut other_field_generics = Vec::new();
                 for (field_name, field_type, generics) in remainder {
-                    other_field_names.push(*field_name);
-                    other_field_types.push((*field_type).clone());
-                    other_field_generics.push(generics);
+                    other_field_names.push((*field_name).clone());
+                    other_field_types.push(field_type.clone());
+                    other_field_generics.push(generics.clone());
                 }
                 (
                     current_field_names,
@@ -394,16 +437,16 @@ fn create_original_conversion_combinations(
                     other_field_generics,
                 )
             }) {
-                let combined_struct_name = combination_names
-                    .get(
-                        &current_field_types
-                            .iter()
-                            .chain(other_field_types.iter())
-                            .cloned()
-                            .sorted()
-                            .collect::<Vec<_>>(),
-                    )
-                    .expect("1: expected a combined struct");
+                let r = current_field_types
+                    .iter()
+                    .chain(other_field_types.iter())
+                    .cloned()
+                    .sorted()
+                    .collect::<Vec<_>>();
+                let combined_struct_name = combination_names.get(&r).expect(&format!(
+                    "1: expected a combined struct: {:#?}\nCOMBINATION NAMES: {:#?}",
+                    r, combination_names,
+                ));
                 let remainder_struct_name = {
                     let mut other_field_types = other_field_types.clone();
                     other_field_types.sort();
@@ -413,12 +456,13 @@ fn create_original_conversion_combinations(
                 };
                 let mut current_field_generic = Generics::default();
                 for current_generics in current_field_generics {
-                    current_field_generic = merge_generics(current_field_generic, current_generics);
+                    current_field_generic =
+                        merge_generics(current_field_generic, &current_generics);
                 }
                 let current_field_generics = current_field_generic;
                 let mut other_field_generic = Generics::default();
                 for other_generics in other_field_generics {
-                    other_field_generic = merge_generics(other_field_generic, other_generics);
+                    other_field_generic = merge_generics(other_field_generic, &other_generics);
                 }
                 let other_field_generics = other_field_generic;
                 let q = quote::quote! {
