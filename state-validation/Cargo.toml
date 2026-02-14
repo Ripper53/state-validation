@@ -1,15 +1,15 @@
 [package]
 name = "state-validation"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 authors = ["Albar <albarjob@gmail.com>"]
 description = "Validation for states"
 repository = "https://github.com/Ripper53/state-validation"
-keywords = ["validate", "validation", "validator"]
+keywords = ["validate", "validation", "validator", "specification"]
 
 [dependencies]
-state-validation-derive = { path = "../state-validation-derive", version = "0.2", optional = true }
+state-validation-derive = { path = "../state-validation-derive", version = "0.3", optional = true }
 thiserror = "2.0.17"
 variadics_please = "1.1.0"
 
