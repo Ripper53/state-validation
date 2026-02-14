@@ -68,13 +68,80 @@ impl quote::ToTokens for ConversionType {
             ConversionType::Type(ty) => {
                 tokens.append_all(ty.to_token_stream());
             }
-            ConversionType::Generic { generic_ident, ty } => {
+            ConversionType::Generic { ty, .. } => {
                 tokens.append_all(quote::quote!(#ty));
             }
         }
     }
 }
 
+/// Implements `StateFilterInputConversion` and `StateFilterInputCombination`,
+/// so that this struct can be split into every individual field and later combined together.
+///
+/// The types each field can be converted to must be specified.
+///
+/// Use `conversion` on the struct fields to convert them to a different type:
+/// ```ignore
+/// #[derive(StateFilterConversion)]
+/// struct ExampleStruct {
+///     #[conversion(AdminUser)]
+///     some_value: UnknownUser,
+/// }
+/// # struct UnknownUser;
+/// # struct AdminUser;
+/// ```
+/// The above code will let a `StateFilter` take `ExampleStruct` as an input,
+/// and output a new struct whose `some_value` is of type `AdminUser` or the original `UnknownUser`.
+///
+/// In some cases, your filters may result in more data output than what was given.
+/// In those cases, you can use the `conversion` attribute on the struct itself for extra fields:
+/// ```ignore
+/// #[derive(StateFilterConversion)]
+/// #[conversion(Age)]
+/// struct ExampleStruct {
+///     some_value: UnknownUser,
+/// }
+/// # struct UnknownUser;
+/// # struct Age;
+/// ```
+/// The above code will allow `ExampleStruct` to be deconstructed and
+/// then reconstructed into a new struct which also contains the field `age: Age`.
+///
+/// If you use generics, use this syntax:
+/// ```ignore
+/// #[derive(StateFilterConversion)]
+/// struct ExampleStruct {
+///     #[conversion(T = UserWithData<T>)]
+///     some_value: UnknownUser,
+/// }
+/// # struct UnknownUser;
+/// # struct UserWithData<T>(T);
+/// ```
+/// And if you want more than one generic, be sure to use a different generic name:
+/// ```ignore
+/// #[derive(StateFilterConversion)]
+/// #[conversion(T0 = SomeMoreData<T0>)]
+/// struct ExampleStruct {
+///     #[conversion(T1, T2 = UserWithData<T1, T2>)]
+///     some_value: UnknownUser,
+/// }
+/// # struct UnknownUser;
+/// # struct UserWithData<T0, T1>(T0, T1);
+/// # struct SomeMoreData<T>(T);
+/// ```
+///
+/// The `conversion` attribute can be used multiple times on a single field for different conversion types:
+/// ```
+/// #[derive(StateFilterConversion)]
+/// struct ExampleStruct {
+///     #[conversion(AdminUser)]
+///     #[conversion(UserWithData)]
+///     some_value: UnknownUser,
+/// }
+/// # struct UnknownUser;
+/// # struct AdminUser;
+/// # struct UserWithData;
+/// ```
 #[proc_macro_derive(StateFilterConversion, attributes(conversion))]
 pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as syn::DeriveInput);
@@ -123,9 +190,6 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
                                 },
                                 generics,
                             ));
-                            /*if attr.path().is_ident("flatten") {
-                                let ty = field.ty;
-                            }*/
                         }
                         all_conversion_fields
                     })
@@ -140,20 +204,20 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
                             .parse_args::<ConversionType>()
                             .expect("expected a conversion type");
                         let (field_name, generics) = match &f {
-                            ConversionType::Type(ty) => (
-                                quote::format_ident!(
-                                    "{}",
-                                    quote::quote!(#ty).to_string().to_snake_case(),
-                                ),
-                                extract_generics_from_type(ty, &ast.generics),
-                            ),
-                            ConversionType::Generic { generic_ident, ty } => (
-                                quote::format_ident!(
-                                    "{}",
-                                    quote::quote!(#ty).to_string().to_snake_case(),
-                                ),
-                                parse_quote!(<#(#generic_ident),*>),
-                            ),
+                            ConversionType::Type(ty) => {
+                                let ident = type_to_ident(ty);
+                                (
+                                    quote::format_ident!("{}", ident.to_string().to_snake_case()),
+                                    extract_generics_from_type(ty, &ast.generics),
+                                )
+                            }
+                            ConversionType::Generic { generic_ident, ty } => {
+                                let ident = type_to_ident(ty);
+                                (
+                                    quote::format_ident!("{}", ident.to_string().to_snake_case()),
+                                    parse_quote!(<#(#generic_ident),*>),
+                                )
+                            }
                         };
                         // TODO: for now, the extra fields can be of only 1 type
                         vec![(
@@ -172,7 +236,6 @@ pub fn state_filter_conversion(input: TokenStream) -> TokenStream {
             };
             let mut combination_names = HashMap::new();
             let mut remainder_names = HashMap::new();
-            // TODO: ASSUMES NO NEW DATA CAN BE CREATED
             let mut i = 0;
             for powerset in iter.iter().powerset() {
                 for (field_names, mut field_types, field_generics) in
@@ -618,4 +681,16 @@ fn merge_generics(mut generics_a: Generics, generics_b: &Generics) -> Generics {
     }
 
     generics_a
+}
+
+fn type_to_ident(ty: &Type) -> &Ident {
+    match ty {
+        Type::Path(type_path) => type_path
+            .path
+            .segments
+            .last()
+            .map(|seg| &seg.ident)
+            .unwrap(),
+        _ => unimplemented!(),
+    }
 }

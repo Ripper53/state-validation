@@ -1,5 +1,5 @@
 //! ## State Validation
-//! `state-validation` lets you validate an input for a given state. Then, run an action using the validated output.
+//! `state-validation` is an implementation of the specification pattern. It lets you validate an input for a given state. Then, run an action using the validated output.
 //!
 //! Ex. You want to remove an admin from `UserStorage`, given a `UserID`, you want to retrieve the `User` who maps onto the `UserID` and validate they are an existing user whose privilege level is admin.
 //! The state is `UserStorage`, the input is a `UserID`, and the valid output is an `AdminUser`.
